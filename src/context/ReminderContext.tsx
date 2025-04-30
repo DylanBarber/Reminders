@@ -1,11 +1,15 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import axios from 'axios';
 import { Reminder, ReminderFormData } from '../types/Reminder';
+import { useAuth } from './AuthContext';
 
 interface ReminderContextType {
   reminders: Reminder[];
-  addReminder: (reminder: ReminderFormData) => void;
-  editReminder: (id: string, reminder: ReminderFormData) => void;
-  deleteReminder: (id: string) => void;
+  addReminder: (reminder: ReminderFormData) => Promise<void>;
+  editReminder: (id: string, reminder: ReminderFormData) => Promise<void>;
+  deleteReminder: (id: string) => Promise<void>;
+  loading: boolean;
+  error: string | null;
 }
 
 const ReminderContext = createContext<ReminderContextType | undefined>(undefined);
@@ -20,27 +24,74 @@ export const useReminders = () => {
 
 export const ReminderProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { token } = useAuth();
 
-  const addReminder = (reminder: ReminderFormData) => {
-    const newReminder: Reminder = {
-      ...reminder,
-      id: Date.now().toString(),
-    };
-    setReminders([...reminders, newReminder]);
+  useEffect(() => {
+    if (token) {
+      fetchReminders();
+    }
+  }, [token]);
+
+  const fetchReminders = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get('http://localhost:3001/api/reminders');
+      setReminders(response.data);
+      setError(null);
+    } catch (err) {
+      setError('Failed to fetch reminders');
+      console.error('Error fetching reminders:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const editReminder = (id: string, reminder: ReminderFormData) => {
-    setReminders(reminders.map(r => 
-      r.id === id ? { ...r, ...reminder } : r
-    ));
+  const addReminder = async (reminder: ReminderFormData) => {
+    try {
+      const response = await axios.post('http://localhost:3001/api/reminders', reminder);
+      setReminders([...reminders, response.data]);
+      setError(null);
+    } catch (err) {
+      setError('Failed to add reminder');
+      throw err;
+    }
   };
 
-  const deleteReminder = (id: string) => {
-    setReminders(reminders.filter(r => r.id !== id));
+  const editReminder = async (id: string, reminder: ReminderFormData) => {
+    try {
+      const response = await axios.put(`http://localhost:3001/api/reminders/${id}`, reminder);
+      setReminders(reminders.map(r => (r.id === id ? response.data : r)));
+      setError(null);
+    } catch (err) {
+      setError('Failed to update reminder');
+      throw err;
+    }
+  };
+
+  const deleteReminder = async (id: string) => {
+    try {
+      await axios.delete(`http://localhost:3001/api/reminders/${id}`);
+      setReminders(reminders.filter(r => r.id !== id));
+      setError(null);
+    } catch (err) {
+      setError('Failed to delete reminder');
+      throw err;
+    }
   };
 
   return (
-    <ReminderContext.Provider value={{ reminders, addReminder, editReminder, deleteReminder }}>
+    <ReminderContext.Provider
+      value={{
+        reminders,
+        addReminder,
+        editReminder,
+        deleteReminder,
+        loading,
+        error,
+      }}
+    >
       {children}
     </ReminderContext.Provider>
   );
